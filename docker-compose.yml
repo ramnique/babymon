@@ -7,9 +7,15 @@ services:
       - '443:443'
       - '443:443/udp' # HTTP/3
     volumes:
-      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      # CADDY_VARIANT=.auth in .env mounts Caddyfile.auth (basic auth) instead.
+      - ./docker/Caddyfile${CADDY_VARIANT:-}:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    # env_file passes values verbatim (no $-interpolation), which matters for
+    # the bcrypt BASIC_AUTH_HASH.
+    env_file:
+      - path: .env
+        required: false
     environment:
       PUBLIC_HOST: ${PUBLIC_HOST:?set PUBLIC_HOST in .env}
 

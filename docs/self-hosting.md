@@ -114,6 +114,32 @@ cd babymon && git pull && docker compose up -d --build
 Only changed containers are recreated; certificates persist in a volume.
 Reload open camera/viewer pages afterwards to pick up the new frontend.
 
+## Optional: password-protect the whole app
+
+By default there is no password — the room code is the credential (unguessable,
+rate-limited, revocable). If you want a second wall so strangers can't even
+*load* the app, enable HTTP Basic Auth at the proxy. It covers the web app and
+the signaling WebSocket; TURN is transitively covered, since its credentials
+are only handed out over that WebSocket.
+
+```sh
+# 1. generate a password hash
+docker run --rm caddy:2 caddy hash-password --plaintext 'your-password'
+
+# 2. add to .env (paste the hash verbatim — no escaping needed):
+#    CADDY_VARIANT=.auth
+#    BASIC_AUTH_USER=parent
+#    BASIC_AUTH_HASH=$2a$14$...
+
+# 3. apply
+docker compose up -d
+```
+
+Every device then gets a one-time browser login popup before the page loads —
+including anyone you share a watch link with, so they'll need the
+username/password once plus the link. Remove the three lines and
+`docker compose up -d` again to turn it off.
+
 ## Verifying TURN actually works
 
 Most connections go direct and never touch coturn, so a broken TURN setup can
