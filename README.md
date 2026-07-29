@@ -30,6 +30,12 @@ docker compose up -d --build
 Point your domain's DNS at the server *before* the first start so Caddy can
 obtain the certificate. That's the whole deployment.
 
+Step-by-step guides: **[Self-hosting guide](docs/self-hosting.md)** (deploy,
+updating, TURN verification, troubleshooting) with provider walkthroughs for
+[DigitalOcean](docs/hosting/digitalocean.md),
+[AWS Lightsail](docs/hosting/aws-lightsail.md), and
+[Hetzner](docs/hosting/hetzner.md).
+
 Prefer your own reverse proxy (nginx/Traefik)? Remove the `caddy` service,
 re-expose `app` on 8080, and remember the WebSocket upgrade headers for `/ws`
 and `X-Forwarded-For` (used for rate limiting).
