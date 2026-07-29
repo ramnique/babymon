@@ -22,7 +22,7 @@ container obtains and renews the Let's Encrypt certificate automatically
 (browsers require HTTPS for camera access).
 
 ```sh
-git clone https://github.com/you/babymon && cd babymon
+git clone https://github.com/ramnique/babymon && cd babymon
 cp .env.example .env        # set PUBLIC_HOST and a random TURN_SECRET
 docker compose up -d --build
 ```
