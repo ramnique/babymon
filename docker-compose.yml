@@ -1,11 +1,27 @@
 services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp' # HTTP/3
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?set PUBLIC_HOST in .env}
+
   app:
     build:
       context: .
       dockerfile: docker/Dockerfile
     restart: unless-stopped
-    ports:
-      - '8080:8080' # put your reverse proxy (HTTPS) in front of this
+    # No host port needed — Caddy proxies to it on the compose network.
+    # Uncomment to also reach the app directly (e.g. LAN use without TLS):
+    # ports:
+    #   - '8080:8080'
     environment:
       TURN_SECRET: ${TURN_SECRET:?set TURN_SECRET in .env}
       TURN_URLS: turn:${PUBLIC_HOST:?set PUBLIC_HOST in .env}:3478?transport=udp,turn:${PUBLIC_HOST}:3478?transport=tcp
@@ -30,3 +46,7 @@ services:
       --no-multicast-peers
       --no-tlsv1
       --no-tlsv1_1
+
+volumes:
+  caddy_data: # TLS certificates persist across restarts
+  caddy_config:

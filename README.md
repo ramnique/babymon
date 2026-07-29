@@ -16,8 +16,10 @@ cloud in the media path.
 
 ## Self-hosting
 
-Requirements: a host running Docker, a domain pointing at it, and a reverse
-proxy doing HTTPS (browsers require HTTPS for camera access).
+Requirements: any Linux host running Docker with a public IP (a $5 VPS is
+plenty), and a domain pointing at it. HTTPS is included — a bundled Caddy
+container obtains and renews the Let's Encrypt certificate automatically
+(browsers require HTTPS for camera access).
 
 ```sh
 git clone https://github.com/you/babymon && cd babymon
@@ -25,24 +27,18 @@ cp .env.example .env        # set PUBLIC_HOST and a random TURN_SECRET
 docker compose up -d --build
 ```
 
-Then put your reverse proxy in front of port 8080. Caddy example
-(`/etc/caddy/Caddyfile`):
+Point your domain's DNS at the server *before* the first start so Caddy can
+obtain the certificate. That's the whole deployment.
 
-```
-babymon.example.com {
-    reverse_proxy localhost:8080
-}
-```
-
-Caddy handles the TLS certificate and WebSocket upgrade automatically. For
-nginx, remember `proxy_set_header Upgrade/Connection` for `/ws` and
-`X-Forwarded-For` (used for rate limiting).
+Prefer your own reverse proxy (nginx/Traefik)? Remove the `caddy` service,
+re-expose `app` on 8080, and remember the WebSocket upgrade headers for `/ws`
+and `X-Forwarded-For` (used for rate limiting).
 
 ### Ports to open
 
 | Port | Protocol | What |
 |---|---|---|
-| 443 | TCP | HTTPS via your reverse proxy → app on 8080 |
+| 80 + 443 | TCP (+443 UDP for HTTP/3) | HTTPS via bundled Caddy |
 | 3478 | UDP + TCP | TURN (coturn) |
 | 49160–49200 | UDP | TURN relay range |
 
