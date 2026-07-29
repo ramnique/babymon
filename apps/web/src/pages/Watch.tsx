@@ -1,4 +1,5 @@
 import { isValidRoomCode, normalizeRoomCode, type IceServer, type ServerToClient } from '@babymon/shared';
+import { QRCodeSVG } from 'qrcode.react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { getRouteInfo, rtcConfig, type RouteInfo } from '../lib/rtcstats';
@@ -333,6 +334,25 @@ export default function WatchPage() {
             </span>
           )}
           <MonitorPanel stream={remoteStream} videoRef={videoRef} overlayHostRef={wrapRef} />
+
+          <details className="card shareCard">
+            <summary>Invite another viewer</summary>
+            <p className="muted">
+              Let someone else watch too — scan this on their phone, or send them the link. (Two
+              viewers can watch at once; if the room is full, one of you closes the page first.)
+            </p>
+            <div className="qr">
+              <QRCodeSVG value={`${window.location.origin}/watch#${code}`} size={168} />
+            </div>
+            <div className="code">{code}</div>
+            <button
+              onClick={() =>
+                void navigator.clipboard.writeText(`${window.location.origin}/watch#${code}`)
+              }
+            >
+              Copy link
+            </button>
+          </details>
         </>
       )}
 

@@ -370,6 +370,15 @@ button.badge {
   color: var(--dim);
 }
 
+.shareCard summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.shareCard[open] summary {
+  margin-bottom: 4px;
+}
+
 .explainer p {
   margin: 8px 0 0;
 }
