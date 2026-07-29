@@ -1,3 +1,16 @@
+/**
+ * Debug aid: append ?relay=1 to the camera/watch URL to force all media
+ * through the TURN server (iceTransportPolicy: 'relay') — proves the relay
+ * path works without waiting for a network that needs it.
+ */
+export function rtcConfig(iceServers: RTCIceServer[]): RTCConfiguration {
+  const config: RTCConfiguration = { iceServers };
+  if (new URLSearchParams(location.search).has('relay')) {
+    config.iceTransportPolicy = 'relay';
+  }
+  return config;
+}
+
 export interface RouteInfo {
   kind: 'lan' | 'internet' | 'relay' | 'connecting';
   localAddr?: string;

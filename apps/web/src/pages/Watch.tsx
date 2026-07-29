@@ -1,7 +1,7 @@
 import { isValidRoomCode, normalizeRoomCode, type IceServer, type ServerToClient } from '@babymon/shared';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { getRouteInfo, type RouteInfo } from '../lib/rtcstats';
+import { getRouteInfo, rtcConfig, type RouteInfo } from '../lib/rtcstats';
 import { SignalingClient } from '../lib/signaling';
 import { clearWatchCode, saveWatchCode } from '../lib/store';
 import ConnectionsPanel from '../ui/ConnectionsPanel';
@@ -87,7 +87,7 @@ export default function WatchPage() {
     async function onOffer(sdp: RTCSessionDescriptionInit) {
       // Every offer starts a fresh peer connection (camera restarts re-offer).
       pcRef.current?.close();
-      const pc = new RTCPeerConnection({ iceServers: iceRef.current as RTCIceServer[] });
+      const pc = new RTCPeerConnection(rtcConfig(iceRef.current as RTCIceServer[]));
       pcRef.current = pc;
 
       pc.ontrack = (e) => {

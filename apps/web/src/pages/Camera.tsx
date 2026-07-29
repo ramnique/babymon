@@ -2,7 +2,7 @@ import { generateRoomCode, type IceServer, type ServerToClient } from '@babymon/
 import { QRCodeSVG } from 'qrcode.react';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getRouteInfo, type RouteInfo } from '../lib/rtcstats';
+import { getRouteInfo, rtcConfig, type RouteInfo } from '../lib/rtcstats';
 import { SignalingClient } from '../lib/signaling';
 import { loadOrCreateCameraCode, saveCameraCode } from '../lib/store';
 import ConnectionsPanel from '../ui/ConnectionsPanel';
@@ -69,7 +69,7 @@ export default function CameraPage() {
     const stream = streamRef.current;
     if (!stream || pcsRef.current.has(peerId)) return;
 
-    const pc = new RTCPeerConnection({ iceServers: iceRef.current as RTCIceServer[] });
+    const pc = new RTCPeerConnection(rtcConfig(iceRef.current as RTCIceServer[]));
     pcsRef.current.set(peerId, pc);
     syncViewers();
 
