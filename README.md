@@ -14,6 +14,20 @@ cloud in the media path.
   signaling per session, and mints ephemeral TURN credentials. Video never
   touches it (except via optional coturn relay when direct P2P is impossible).
 
+## Try it in 2 minutes (no server needed)
+
+On any macOS/Windows/Linux machine with [Node.js](https://nodejs.org) 22+:
+
+```sh
+git clone https://github.com/ramnique/babymon && cd babymon
+corepack enable && pnpm install && pnpm dev
+```
+
+Open `http://localhost:5173` in two browser windows — one as camera, one as
+viewer. To point your actual phone at it, see
+[trying it on your own computer](docs/self-hosting.md#try-it-on-your-own-computer-first-macos--windows)
+— a free Cloudflare quick tunnel gives your machine a temporary HTTPS URL.
+
 ## Self-hosting
 
 Requirements: any Linux host running Docker with a public IP (a $5 VPS is

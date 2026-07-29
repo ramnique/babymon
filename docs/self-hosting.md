@@ -8,6 +8,58 @@ Provider-specific walkthroughs: [DigitalOcean](hosting/digitalocean.md) ·
 [AWS Lightsail](hosting/aws-lightsail.md) · [Hetzner](hosting/hetzner.md).
 Everything below applies to all of them.
 
+## Try it on your own computer first (macOS / Windows)
+
+You don't need a server, a domain, or Docker to see babymon working — just
+[Node.js](https://nodejs.org) 22+.
+
+### Two windows on one machine (2 minutes)
+
+```sh
+git clone https://github.com/ramnique/babymon && cd babymon
+corepack enable   # provides pnpm
+pnpm install
+pnpm dev
+```
+
+Open `http://localhost:5173` in one browser window → **Start as camera**
+(camera permission works on localhost). Copy the invite link into a second
+window → you're watching. Talk-back, noise/motion alerts, and the connections
+panel all work. Wear headphones or mute the speakers — the camera mic hears
+the viewer's output on one machine.
+
+### With your actual phone (10 minutes)
+
+Phones refuse camera access on plain `http://<lan-ip>` addresses, so give
+your machine a temporary public HTTPS URL with a free
+[Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/)
+(no account needed):
+
+```sh
+# macOS                                   # Windows (PowerShell)
+brew install cloudflared                  winget install Cloudflare.cloudflared
+
+# terminal 1 — build and run the server
+pnpm build
+# macOS:
+PUBLIC_DIR=$PWD/apps/web/dist node apps/server/dist/index.js
+# Windows (PowerShell):
+$env:PUBLIC_DIR="$PWD/apps/web/dist"; node apps/server/dist/index.js
+
+# terminal 2 — the tunnel
+cloudflared tunnel --url http://localhost:8080
+```
+
+cloudflared prints an `https://….trycloudflare.com` URL. Open it on the
+nursery phone → camera; scan the QR with any other device → watching, from
+anywhere.
+
+Limits of this mode — fine for trying it, wrong for every-night use: the URL
+changes on every tunnel restart, the stack only runs while your computer is
+awake, and there's no TURN relay, so viewers on strict networks (some offices,
+some mobile carriers) won't connect. The VPS deployment below fixes all
+three.
+
 ## Requirements
 
 - A Linux host with Docker and a **public IPv4 address** — the smallest paid
