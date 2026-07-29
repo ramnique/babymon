@@ -14,6 +14,13 @@ cloud in the media path.
   signaling per session, and mints ephemeral TURN credentials. Video never
   touches it (except via optional coturn relay when direct P2P is impossible).
 
+<p align="center">
+  <img src="docs/images/camera.png" alt="Camera page on the nursery iPhone: live preview, camera picker, online/watching status, and the invite QR code" width="33%">
+  &nbsp;&nbsp;
+  <img src="docs/images/watch.png" alt="Watch page on the viewer's device: live video, hold-to-talk button, noise/motion monitoring controls, and invite panel" width="58%">
+</p>
+<p align="center"><sub>The camera page on the nursery phone (left) and the watch page on a viewer's device (right).</sub></p>
+
 ## Try it in 2 minutes (no server needed)
 
 On any macOS/Windows/Linux machine with [Node.js](https://nodejs.org) 22+:
