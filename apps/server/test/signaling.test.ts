@@ -144,6 +144,36 @@ describe('camera lifecycle', () => {
   });
 });
 
+describe('ghost viewers', () => {
+  it('a rejoin with the same viewerId evicts the previous connection', () => {
+    const { hub, camera } = setup();
+    const ghost = new FakeSocket();
+    connectAndSend(hub, ghost, '10.0.0.2', { t: 'join', code: CODE, viewerId: 'phone-abc-123' });
+    const ghostPeer = ghost.ofType('joined')[0]!.peerId;
+
+    // Fill the second slot too — the room is now "full".
+    joinViewer(hub, '10.0.0.3');
+
+    // Same browser rejoins (page was killed without closing the socket).
+    const fresh = new FakeSocket();
+    connectAndSend(hub, fresh, '10.0.0.2', { t: 'join', code: CODE, viewerId: 'phone-abc-123' });
+
+    expect(fresh.ofType('joined')).toHaveLength(1); // NOT rejected as full
+    expect(ghost.ofType('kicked')[0]).toEqual({ t: 'kicked', reason: 'replaced' });
+    expect(ghost.closed).toBe(true);
+    expect(camera.ofType('peer-left').map((m) => m.peerId)).toContain(ghostPeer);
+  });
+
+  it('different viewerIds still hit the room cap', () => {
+    const { hub } = setup();
+    connectAndSend(hub, new FakeSocket(), '10.0.0.2', { t: 'join', code: CODE, viewerId: 'aaaa-1111' });
+    connectAndSend(hub, new FakeSocket(), '10.0.0.3', { t: 'join', code: CODE, viewerId: 'bbbb-2222' });
+    const third = new FakeSocket();
+    connectAndSend(hub, third, '10.0.0.4', { t: 'join', code: CODE, viewerId: 'cccc-3333' });
+    expect(third.last()).toEqual({ t: 'rejected', reason: 'full' });
+  });
+});
+
 describe('roster', () => {
   it('broadcasts membership with IPs to everyone on join and leave', () => {
     const { hub, camera } = setup();

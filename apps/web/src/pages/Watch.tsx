@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { getRouteInfo, rtcConfig, type RouteInfo } from '../lib/rtcstats';
 import { SignalingClient } from '../lib/signaling';
-import { clearWatchCode, saveWatchCode } from '../lib/store';
+import { clearWatchCode, loadOrCreateViewerId, saveWatchCode } from '../lib/store';
 import ConnectionsPanel from '../ui/ConnectionsPanel';
 import MonitorPanel from '../ui/MonitorPanel';
 
@@ -17,7 +17,8 @@ type Status =
   | 'camera-offline'
   | 'room-full'
   | 'rate-limited'
-  | 'revoked';
+  | 'revoked'
+  | 'superseded';
 
 const STATUS_TEXT: Record<Status, string> = {
   connecting: 'Connecting…',
@@ -27,6 +28,7 @@ const STATUS_TEXT: Record<Status, string> = {
   'room-full': 'Room is full (2 viewers max). Retrying…',
   'rate-limited': 'Too many attempts — waiting a bit…',
   revoked: 'Access was revoked (the camera generated a new code).',
+  superseded: 'Watching moved to another tab or window.',
 };
 
 interface SignalPayload {
@@ -183,6 +185,12 @@ export default function WatchPage() {
             sig.close();
             clearWatchCode();
             setStatus('revoked');
+          } else if (msg.reason === 'replaced') {
+            // This browser started watching in a newer tab; stand down here.
+            stopped = true;
+            closePc();
+            sig.close();
+            setStatus('superseded');
           }
           break;
         default:
@@ -192,7 +200,7 @@ export default function WatchPage() {
 
     sig.onstatus = (s) => {
       if (s === 'open') {
-        sig.send({ t: 'join', code });
+        sig.send({ t: 'join', code, viewerId: loadOrCreateViewerId() });
       } else if (s === 'closed' && !stopped) {
         closePc();
         setStatus('connecting');
@@ -201,8 +209,14 @@ export default function WatchPage() {
     sig.onmessage = handleMessage;
     sig.connect();
 
+    // Free our room slot immediately when the page goes away — mobile
+    // browsers kill pages without closing sockets otherwise.
+    const onPageHide = () => sig.dropConnection();
+    window.addEventListener('pagehide', onPageHide);
+
     return () => {
       stopped = true;
+      window.removeEventListener('pagehide', onPageHide);
       if (retryRef.current) clearTimeout(retryRef.current);
       closePc();
       sig.close();

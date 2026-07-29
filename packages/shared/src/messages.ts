@@ -12,8 +12,14 @@ export const signalData = z.unknown();
 export const clientToServer = z.discriminatedUnion('t', [
   // Camera claims (or re-claims after restart) a room for its code.
   z.object({ t: z.literal('host'), code: z.string().min(12).max(64) }),
-  // Viewer asks to join the room for a code.
-  z.object({ t: z.literal('join'), code: z.string().min(12).max(64) }),
+  // Viewer asks to join the room for a code. viewerId is a stable per-browser
+  // id: a rejoin with the same id evicts the previous (possibly dead)
+  // connection instead of colliding with it.
+  z.object({
+    t: z.literal('join'),
+    code: z.string().min(12).max(64),
+    viewerId: z.string().min(8).max(64).optional(),
+  }),
   // Camera → a specific viewer.
   z.object({ t: z.literal('signal'), peerId: z.string(), data: signalData }),
   // Viewer → camera (target is implicit).

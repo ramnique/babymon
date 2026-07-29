@@ -8,8 +8,10 @@ import { RateLimiter } from './ratelimit.js';
 import { RoomRegistry, type PeerSocket, type Room } from './rooms.js';
 import { mintIceServers, type TurnConfig } from './turn.js';
 
-const HEARTBEAT_INTERVAL_MS = 15_000;
-const STALE_AFTER_MS = 50_000;
+// Mobile browsers kill pages without closing sockets; keep the ghost window
+// short so a dead viewer frees its room slot quickly.
+const HEARTBEAT_INTERVAL_MS = 10_000;
+const STALE_AFTER_MS = 30_000;
 
 interface Connection {
   socket: PeerSocket;
@@ -17,6 +19,7 @@ interface Connection {
   role: 'camera' | 'viewer' | null;
   room: Room | null;
   peerId: string | null; // set for viewers
+  viewerId: string | null; // stable per-browser id, set for viewers
   lastSeen: number;
 }
 
@@ -44,7 +47,15 @@ export class SignalingHub {
   ) {}
 
   connect(socket: PeerSocket, ip: string): Connection {
-    const conn: Connection = { socket, ip, role: null, room: null, peerId: null, lastSeen: this.now() };
+    const conn: Connection = {
+      socket,
+      ip,
+      role: null,
+      room: null,
+      peerId: null,
+      viewerId: null,
+      lastSeen: this.now(),
+    };
     this.connections.add(conn);
     return conn;
   }
@@ -66,7 +77,7 @@ export class SignalingHub {
       case 'host':
         return this.handleHost(conn, msg.code);
       case 'join':
-        return this.handleJoin(conn, msg.code);
+        return this.handleJoin(conn, msg.code, msg.viewerId ?? null);
       case 'signal':
         return this.handleSignalToViewer(conn, msg.peerId, msg.data);
       case 'signal-camera':
@@ -117,7 +128,7 @@ export class SignalingHub {
     this.broadcastRoster(room);
   }
 
-  private handleJoin(conn: Connection, code: string): void {
+  private handleJoin(conn: Connection, code: string, viewerId: string | null): void {
     if (conn.role !== null) {
       send(conn.socket, { t: 'error', message: 'already in a room' });
       return;
@@ -130,6 +141,20 @@ export class SignalingHub {
       send(conn.socket, { t: 'rejected', reason: 'bad-code' });
       return;
     }
+
+    // Ghost-busting: the same browser rejoining evicts its previous
+    // connection (mobile browsers kill pages without closing sockets, and the
+    // corpse would otherwise hold a viewer slot until the reaper runs).
+    if (viewerId) {
+      for (const other of [...this.connections]) {
+        if (other !== conn && other.role === 'viewer' && other.viewerId === viewerId) {
+          send(other.socket, { t: 'kicked', reason: 'replaced' });
+          this.close(other);
+          other.socket.close();
+        }
+      }
+    }
+    conn.viewerId = viewerId;
 
     const result = this.rooms.join(code, conn.socket);
     if (!result.ok) {

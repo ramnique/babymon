@@ -375,8 +375,14 @@ export default function CameraPage() {
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
+    // Free the room promptly if the camera page is closed without a clean
+    // WebSocket shutdown (mobile browsers do this); reconnect logic revives
+    // the session if the page was merely bfcached.
+    const onPageHide = () => sigRef.current?.dropConnection();
+    window.addEventListener('pagehide', onPageHide);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', onPageHide);
       stopEverything();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

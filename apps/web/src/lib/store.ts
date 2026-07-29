@@ -46,3 +46,14 @@ export function saveWatchCode(code: string): void {
 export function clearWatchCode(): void {
   localStorage.removeItem(WATCH_CODE_KEY);
 }
+
+const VIEWER_ID_KEY = 'babymon.viewerId';
+
+/** Stable per-browser id so a rejoin evicts this browser's ghost connection. */
+export function loadOrCreateViewerId(): string {
+  const existing = localStorage.getItem(VIEWER_ID_KEY);
+  if (existing) return existing;
+  const id = crypto.randomUUID();
+  localStorage.setItem(VIEWER_ID_KEY, id);
+  return id;
+}

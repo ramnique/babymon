@@ -8,8 +8,8 @@ export function wsUrl(): string {
 }
 
 const MAX_BACKOFF_MS = 30_000;
-/** Server pings every 15s; if nothing arrives for this long the socket is dead. */
-const WATCHDOG_MS = 50_000;
+/** Server pings every 10s; if nothing arrives for this long the socket is dead. */
+const WATCHDOG_MS = 35_000;
 
 /**
  * Typed WebSocket wrapper with automatic reconnect. Callers re-send their
@@ -72,6 +72,16 @@ export class SignalingClient {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     }
+  }
+
+  /**
+   * Politely close the current socket without ending the client — the server
+   * frees our room slot immediately, and the normal reconnect/backoff logic
+   * revives the session if the page turns out to still be alive (bfcache).
+   * Call on pagehide.
+   */
+  dropConnection(): void {
+    this.ws?.close();
   }
 
   close(): void {
