@@ -41,6 +41,9 @@ export default function CameraPage() {
   const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
   const [activeCameraId, setActiveCameraId] = useState<string | null>(null);
   const [activeMicId, setActiveMicId] = useState<string | null>(null);
+  const [recovering, setRecovering] = useState(false);
+  const recoveringRef = useRef(false);
+  const noiseSuppressionRef = useRef(true);
 
   const sigRef = useRef<SignalingClient | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -52,6 +55,7 @@ export default function CameraPage() {
   const statusRef = useRef<Status>('idle');
   statusRef.current = status;
   codeRef.current = code;
+  noiseSuppressionRef.current = noiseSuppression;
 
   const watchUrl = `${location.origin}/watch#${code}`;
 
@@ -189,24 +193,90 @@ export default function CameraPage() {
   function micConstraints(deviceId: string | null): MediaTrackConstraints {
     return {
       ...(deviceId ? { deviceId: { ideal: deviceId } } : {}),
-      noiseSuppression,
+      noiseSuppression: noiseSuppressionRef.current,
       echoCancellation: true,
     };
+  }
+
+  function preferredConstraints(): MediaStreamConstraints {
+    const savedCamera = loadCameraDevice();
+    return {
+      video: savedCamera
+        ? { deviceId: { ideal: savedCamera }, ...VIDEO_SIZE }
+        : { facingMode: 'environment', ...VIDEO_SIZE },
+      audio: micConstraints(loadMicDevice()),
+    };
+  }
+
+  /**
+   * iOS interruption watchdogs: a phone call / Siri seizes the camera and the
+   * tracks end (or stick muted) — Safari never restarts capture by itself.
+   */
+  function watchTracks(stream: MediaStream) {
+    for (const track of stream.getTracks()) {
+      track.onended = () => void recoverCapture(`${track.kind} track ended`);
+      track.onmute = () => {
+        // Tracks mute briefly all the time; only a *stuck* mute needs action.
+        setTimeout(() => {
+          if (
+            track.muted &&
+            track.readyState === 'live' &&
+            document.visibilityState === 'visible'
+          ) {
+            void recoverCapture(`${track.kind} track stuck muted`);
+          }
+        }, 4000);
+      };
+    }
+  }
+
+  async function recoverCapture(reason: string) {
+    if (recoveringRef.current || statusRef.current !== 'live') return;
+    recoveringRef.current = true;
+    setRecovering(true);
+    console.warn('recovering capture:', reason);
+    try {
+      // The camera may still be held by the interrupting app (ongoing call) —
+      // keep retrying with backoff until we get it back or the page stops.
+      for (let attempt = 0; statusRef.current === 'live'; attempt++) {
+        try {
+          const fresh = await navigator.mediaDevices.getUserMedia(preferredConstraints());
+          const old = streamRef.current;
+          streamRef.current = fresh;
+          for (const pc of pcsRef.current.values()) {
+            for (const sender of pc.getSenders()) {
+              const kind = sender.track?.kind;
+              const replacement =
+                kind === 'video'
+                  ? fresh.getVideoTracks()[0]
+                  : kind === 'audio'
+                    ? fresh.getAudioTracks()[0]
+                    : undefined;
+              if (replacement) await sender.replaceTrack(replacement);
+            }
+          }
+          old?.getTracks().forEach((t) => t.stop());
+          if (previewRef.current) previewRef.current.srcObject = fresh;
+          watchTracks(fresh);
+          void refreshDevices(fresh);
+          return;
+        } catch {
+          await new Promise((r) => setTimeout(r, Math.min(10_000, 1000 * 2 ** attempt)));
+        }
+      }
+    } finally {
+      recoveringRef.current = false;
+      setRecovering(false);
+    }
   }
 
   async function start() {
     setStatus('starting');
     setError(null);
     try {
-      const savedCamera = loadCameraDevice();
-      const stream = await navigator.mediaDevices.getUserMedia({
-        // Prefer the last-used devices; fall back to the back camera.
-        video: savedCamera
-          ? { deviceId: { ideal: savedCamera }, ...VIDEO_SIZE }
-          : { facingMode: 'environment', ...VIDEO_SIZE },
-        audio: micConstraints(loadMicDevice()),
-      });
+      const stream = await navigator.mediaDevices.getUserMedia(preferredConstraints());
       streamRef.current = stream;
+      watchTracks(stream);
       connectSignaling();
       await acquireWakeLock();
       setStatus('live');
@@ -292,6 +362,16 @@ export default function CameraPage() {
         // Safari drops both the wake lock and (sometimes) capture when the
         // page hides; reclaim what we can on return.
         void acquireWakeLock();
+        // Give Safari a moment to resume tracks itself, then check for corpses.
+        setTimeout(() => {
+          const stream = streamRef.current;
+          if (
+            statusRef.current === 'live' &&
+            stream?.getTracks().some((t) => t.readyState === 'ended' || t.muted)
+          ) {
+            void recoverCapture('page visible with dead tracks');
+          }
+        }, 1500);
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
@@ -357,9 +437,9 @@ export default function CameraPage() {
       {status === 'live' && (
         <>
           <div className="row spread">
-            <span className={`badge ${signalingUp ? 'live' : 'warn'}`}>
+            <span className={`badge ${recovering ? 'warn' : signalingUp ? 'live' : 'warn'}`}>
               <span className="dot" />
-              {signalingUp ? 'online' : 'reconnecting…'}
+              {recovering ? 'restoring camera…' : signalingUp ? 'online' : 'reconnecting…'}
             </span>
             <button className="badge" onClick={() => setPanelOpen((v) => !v)}>
               <span className="dot" style={{ background: viewerIds.length ? 'var(--good)' : undefined }} />
