@@ -16,6 +16,25 @@ export function saveCameraCode(code: string): void {
   localStorage.setItem(CAMERA_CODE_KEY, code);
 }
 
+const CAMERA_DEVICE_KEY = 'babymon.cameraDevice';
+const MIC_DEVICE_KEY = 'babymon.micDevice';
+
+export function loadCameraDevice(): string | null {
+  return localStorage.getItem(CAMERA_DEVICE_KEY);
+}
+
+export function saveCameraDevice(deviceId: string): void {
+  localStorage.setItem(CAMERA_DEVICE_KEY, deviceId);
+}
+
+export function loadMicDevice(): string | null {
+  return localStorage.getItem(MIC_DEVICE_KEY);
+}
+
+export function saveMicDevice(deviceId: string): void {
+  localStorage.setItem(MIC_DEVICE_KEY, deviceId);
+}
+
 export function loadWatchCode(): string | null {
   return localStorage.getItem(WATCH_CODE_KEY);
 }

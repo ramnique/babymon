@@ -4,8 +4,17 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getRouteInfo, rtcConfig, type RouteInfo } from '../lib/rtcstats';
 import { SignalingClient } from '../lib/signaling';
-import { loadOrCreateCameraCode, saveCameraCode } from '../lib/store';
+import {
+  loadCameraDevice,
+  loadMicDevice,
+  loadOrCreateCameraCode,
+  saveCameraCode,
+  saveCameraDevice,
+  saveMicDevice,
+} from '../lib/store';
 import ConnectionsPanel from '../ui/ConnectionsPanel';
+
+const VIDEO_SIZE = { width: { ideal: 1280 }, height: { ideal: 960 } };
 
 type Roster = Extract<ServerToClient, { t: 'roster' }>;
 
@@ -28,6 +37,10 @@ export default function CameraPage() {
   const [roster, setRoster] = useState<Roster | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [routes, setRoutes] = useState<Map<string, RouteInfo>>(new Map());
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
+  const [activeCameraId, setActiveCameraId] = useState<string | null>(null);
+  const [activeMicId, setActiveMicId] = useState<string | null>(null);
 
   const sigRef = useRef<SignalingClient | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -164,21 +177,78 @@ export default function CameraPage() {
     }
   }
 
+  async function refreshDevices(stream: MediaStream) {
+    // Labels are only populated once permission is granted.
+    const all = await navigator.mediaDevices.enumerateDevices();
+    setCameras(all.filter((d) => d.kind === 'videoinput'));
+    setMics(all.filter((d) => d.kind === 'audioinput'));
+    setActiveCameraId(stream.getVideoTracks()[0]?.getSettings().deviceId ?? null);
+    setActiveMicId(stream.getAudioTracks()[0]?.getSettings().deviceId ?? null);
+  }
+
+  function micConstraints(deviceId: string | null): MediaTrackConstraints {
+    return {
+      ...(deviceId ? { deviceId: { ideal: deviceId } } : {}),
+      noiseSuppression,
+      echoCancellation: true,
+    };
+  }
+
   async function start() {
     setStatus('starting');
     setError(null);
     try {
+      const savedCamera = loadCameraDevice();
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 960 } },
-        audio: { noiseSuppression, echoCancellation: true },
+        // Prefer the last-used devices; fall back to the back camera.
+        video: savedCamera
+          ? { deviceId: { ideal: savedCamera }, ...VIDEO_SIZE }
+          : { facingMode: 'environment', ...VIDEO_SIZE },
+        audio: micConstraints(loadMicDevice()),
       });
       streamRef.current = stream;
       connectSignaling();
       await acquireWakeLock();
       setStatus('live');
+      void refreshDevices(stream);
     } catch (err) {
       setStatus('error');
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function switchDevice(kind: 'video' | 'audio', deviceId: string) {
+    const stream = streamRef.current;
+    if (!stream || deviceId === (kind === 'video' ? activeCameraId : activeMicId)) return;
+    try {
+      const fresh = await navigator.mediaDevices.getUserMedia(
+        kind === 'video'
+          ? { video: { deviceId: { exact: deviceId }, ...VIDEO_SIZE } }
+          : { audio: { ...micConstraints(null), deviceId: { exact: deviceId } } },
+      );
+      const newTrack = (kind === 'video' ? fresh.getVideoTracks() : fresh.getAudioTracks())[0];
+      if (!newTrack) return;
+      // Live swap: no renegotiation — every viewer's sender just gets the new track.
+      for (const pc of pcsRef.current.values()) {
+        const sender = pc.getSenders().find((s) => s.track?.kind === kind);
+        await sender?.replaceTrack(newTrack);
+      }
+      const oldTrack = (kind === 'video' ? stream.getVideoTracks() : stream.getAudioTracks())[0];
+      if (oldTrack) {
+        stream.removeTrack(oldTrack);
+        oldTrack.stop();
+      }
+      stream.addTrack(newTrack);
+      if (previewRef.current) previewRef.current.srcObject = stream; // re-attach for Safari
+      if (kind === 'video') {
+        setActiveCameraId(deviceId);
+        saveCameraDevice(deviceId);
+      } else {
+        setActiveMicId(deviceId);
+        saveMicDevice(deviceId);
+      }
+    } catch (err) {
+      console.warn(`${kind} device switch failed`, err);
     }
   }
 
@@ -298,6 +368,39 @@ export default function CameraPage() {
           </div>
 
           {panelOpen && <ConnectionsPanel roster={roster} perspective="camera" routes={routes} />}
+
+          {(cameras.length > 1 || mics.length > 1) && (
+            <div className="row">
+              {cameras.length > 1 && (
+                <select
+                  className="cameraPicker"
+                  aria-label="Camera"
+                  value={activeCameraId ?? ''}
+                  onChange={(e) => void switchDevice('video', e.target.value)}
+                >
+                  {cameras.map((d, i) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      🎥 {d.label || `Camera ${i + 1}`}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {mics.length > 1 && (
+                <select
+                  className="cameraPicker"
+                  aria-label="Microphone"
+                  value={activeMicId ?? ''}
+                  onChange={(e) => void switchDevice('audio', e.target.value)}
+                >
+                  {mics.map((d, i) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      🎤 {d.label || `Microphone ${i + 1}`}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
 
           <div className="videoWrap">
             <video

@@ -101,6 +101,17 @@ input[type='range'] {
   width: 100%;
 }
 
+select.cameraPicker {
+  font: inherit;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #2a323d;
+  background: var(--panel-2);
+  color: var(--text);
+}
+
 .row {
   display: flex;
   gap: 8px;
