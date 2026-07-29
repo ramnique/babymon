@@ -1,15 +1,15 @@
 # babymon
 
-A baby monitor that runs entirely in the browser. Point a spare phone at the
-crib, open a link on your own phone — video streams peer-to-peer over WebRTC,
-on your LAN or across the internet. Self-hosted, open source, no accounts, no
-cloud in the media path.
+A baby monitor that runs entirely in the browser, with noise and motion
+alerts, two-way talk, and a connections panel that shows exactly who is
+watching and how. Point a spare phone at the crib, open a link on your own
+phone — video streams peer-to-peer over WebRTC, on your LAN or across the
+internet. Self-hosted, open source, no accounts, no cloud in the media path.
 
 - **Camera**: any spare phone (designed/tested iPhone-first) on a charger with
   the page open. Persistent room code, shown as a QR/link.
-- **Viewers** (up to 2): open the link, watch live. Push-to-talk to soothe the
-  baby, noise alerts that adapt to white-noise machines, motion alerts with a
-  drawable watch area.
+- **Viewers** (up to 2): open the link, watch live, talk back, get alerted
+  when the baby stirs or cries.
 - **Server**: one small container — serves the app, relays a few KB of
   signaling per session, and mints ephemeral TURN credentials. Video never
   touches it (except via optional coturn relay when direct P2P is impossible).
@@ -20,6 +20,35 @@ cloud in the media path.
   <img src="docs/images/watch.png" alt="Watch page on the viewer's device: live video, hold-to-talk button, noise/motion monitoring controls, and invite panel" width="58%">
 </p>
 <p align="center"><sub>The camera page on the nursery phone (left) and the watch page on a viewer's device (right).</sub></p>
+
+## Features
+
+- **Noise alerts that understand white noise** — the sound threshold adapts
+  to steady background noise (white-noise machines, fans, AC), so it alerts
+  on a cry rising above the hum, not on the hum itself. Three sensitivity
+  levels.
+- **Motion alerts with a drawable watch area** — draw a box over just the
+  crib and movement elsewhere in the frame (curtains, pets, a parent walking
+  by) is ignored. Or watch the whole frame.
+- **Push-to-talk** — hold a button to soothe the baby through the camera
+  phone's speaker; the mic is live only while you hold it.
+- **Invite by QR or link** — the room code travels in the URL fragment, so
+  the full link never appears in server logs. Viewers can hand off to another
+  person (e.g. the other parent) with their own QR. Regenerating the code
+  instantly kicks everyone.
+- **"Who's connected" panel** — both sides see every connected device with
+  its IP, country flag with GeoIP detail on hover, and the actual media route:
+  same LAN, direct over the internet, or via the TURN relay.
+- **Camera & mic pickers** — switch between front/back/ultra-wide cameras and
+  microphones on the camera page, live, without dropping viewers.
+- **Survives real life** — the camera recovers automatically after an
+  incoming phone call kills the capture, keeps the screen awake (with a dim
+  mode to save the battery), and viewers reconnect on their own after network
+  blips.
+- **Private by construction** — media is end-to-end encrypted (DTLS-SRTP)
+  between the two browsers; rooms are ephemeral and the server stores
+  nothing. Optional password wall in front of the whole app
+  ([basic auth via Caddy](docs/self-hosting.md#optional-password-protect-the-whole-app)).
 
 ## Try it in 2 minutes (no server needed)
 
