@@ -126,10 +126,11 @@ are only handed out over that WebSocket.
 # 1. generate a password hash
 docker run --rm caddy:2 caddy hash-password --plaintext 'your-password'
 
-# 2. add to .env (paste the hash verbatim — no escaping needed):
+# 2. add to .env — the single quotes around the hash are REQUIRED, or
+#    docker compose interpolates the $... parts and corrupts it:
 #    CADDY_VARIANT=.auth
 #    BASIC_AUTH_USER=parent
-#    BASIC_AUTH_HASH=$2a$14$...
+#    BASIC_AUTH_HASH='$2a$14$...'
 
 # 3. apply
 docker compose up -d

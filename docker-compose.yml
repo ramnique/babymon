@@ -11,8 +11,8 @@ services:
       - ./docker/Caddyfile${CADDY_VARIANT:-}:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    # env_file passes values verbatim (no $-interpolation), which matters for
-    # the bcrypt BASIC_AUTH_HASH.
+    # Passes BASIC_AUTH_USER/HASH through to Caddy. Compose still interpolates
+    # $-signs in .env values, so BASIC_AUTH_HASH must be single-quoted there.
     env_file:
       - path: .env
         required: false
