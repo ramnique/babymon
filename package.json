@@ -1,0 +1,15 @@
+{
+  "name": "babymon",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --parallel --filter './apps/*' dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "packageManager": "pnpm@10.20.0",
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}
