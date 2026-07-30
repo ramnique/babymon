@@ -2,6 +2,7 @@ import { isValidRoomCode, normalizeRoomCode, type IceServer, type ServerToClient
 import { QRCodeSVG } from 'qrcode.react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { primeAlertSound } from '../lib/alerts';
 import { getRouteInfo, rtcConfig, type RouteInfo } from '../lib/rtcstats';
 import { SignalingClient } from '../lib/signaling';
 import { clearWatchCode, loadOrCreateViewerId, saveWatchCode } from '../lib/store';
@@ -31,6 +32,10 @@ const STATUS_TEXT: Record<Status, string> = {
   superseded: 'Watching moved to another tab or window.',
 };
 
+const CONTROLS_HIDE_MS = 3500;
+
+type Panel = 'monitor' | 'connections' | 'invite';
+
 interface SignalPayload {
   sdp?: RTCSessionDescriptionInit;
   candidate?: RTCIceCandidateInit;
@@ -49,8 +54,11 @@ export default function WatchPage() {
   const [talkError, setTalkError] = useState<string | null>(null);
   const [roster, setRoster] = useState<Roster | null>(null);
   const [selfId, setSelfId] = useState<string | null>(null);
-  const [panelOpen, setPanelOpen] = useState(false);
+  const [panel, setPanel] = useState<Panel | null>(null);
   const [route, setRoute] = useState<RouteInfo | null>(null);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const [editingRoi, setEditingRoi] = useState(false);
+  const [alertToast, setAlertToast] = useState<'noise' | 'motion' | null>(null);
 
   const sigRef = useRef<SignalingClient | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -60,6 +68,77 @@ export default function WatchPage() {
   const micRef = useRef<MediaStreamTrack | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Controls stay up whenever hiding them would strand the user.
+  const pinned = status !== 'live' || panel !== null || talking || editingRoi;
+  const chromeShown = controlsVisible || pinned;
+
+  function poke() {
+    setControlsVisible(true);
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => setControlsVisible(false), CONTROLS_HIDE_MS);
+  }
+
+  function togglePanel(next: Panel) {
+    setPanel((prev) => (prev === next ? null : next));
+    poke();
+  }
+
+  function onStageTap() {
+    if (pinned) {
+      poke();
+      return;
+    }
+    if (controlsVisible) {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      setControlsVisible(false);
+    } else {
+      poke();
+    }
+  }
+
+  function handleAlert(kind: 'noise' | 'motion') {
+    poke();
+    setAlertToast(kind);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setAlertToast(null), 4000);
+  }
+
+  useEffect(() => {
+    if (status === 'live') poke();
+    return () => {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
+  // Keep the screen awake while watching: a locked phone throttles the
+  // detection timers and suspends audio, which kills alerts.
+  useEffect(() => {
+    if (status !== 'live') return;
+    let lock: WakeLockSentinel | null = null;
+    let stopped = false;
+    const acquire = async () => {
+      try {
+        lock = (await navigator.wakeLock?.request('screen')) ?? null;
+      } catch {
+        // Not supported or denied — nothing we can do.
+      }
+    };
+    void acquire();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && !stopped) void acquire();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      stopped = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      lock?.release().catch(() => {});
+    };
+  }, [status]);
 
   useEffect(() => {
     if (!codeOk) return;
@@ -230,7 +309,7 @@ export default function WatchPage() {
   }, [remoteStream]);
 
   useEffect(() => {
-    if (!panelOpen || status !== 'live') return;
+    if (panel !== 'connections' || status !== 'live') return;
     let live = true;
     const tick = async () => {
       const pc = pcRef.current;
@@ -244,7 +323,7 @@ export default function WatchPage() {
       live = false;
       clearInterval(timer);
     };
-  }, [panelOpen, status]);
+  }, [panel, status]);
 
   async function talkStart() {
     setTalkError(null);
@@ -290,97 +369,155 @@ export default function WatchPage() {
   }
 
   return (
-    <div className="page">
-      <h1>
-        <Link to="/">babymon</Link> · watch
-      </h1>
-
-      <div className="row spread">
-        <button
-          className={`badge ${status === 'live' ? 'live' : status === 'revoked' ? 'bad' : 'warn'}`}
-          onClick={() => setPanelOpen((v) => !v)}
-        >
-          <span className="dot" />
-          {STATUS_TEXT[status]}
-          {status === 'live' && roster && `: ${roster.viewers.length} watching`} {panelOpen ? '▴' : '▾'}
-        </button>
-        {status === 'live' && (
-          <button
-            onClick={() => {
-              const next = !muted;
-              setMuted(next);
-              if (!next) void videoRef.current?.play().catch(() => {});
-            }}
-          >
-            {muted ? '🔊 Unmute' : '🔇 Mute'}
-          </button>
-        )}
-      </div>
-
-      {panelOpen && (
-        <ConnectionsPanel
-          roster={roster}
-          perspective="viewer"
-          selfPeerId={selfId}
-          routes={new Map(route ? [['camera', route]] : [])}
-        />
-      )}
-
-      <div className="videoWrap" ref={wrapRef}>
+    <div
+      className={`watchStage ${chromeShown ? '' : 'chromeOff'} ${alertToast ? 'stageFlash' : ''}`}
+      onPointerMove={(e) => {
+        if (e.pointerType === 'mouse') poke();
+      }}
+    >
+      <div className="stageVideo" ref={wrapRef} onClick={onStageTap}>
         <video ref={videoRef} autoPlay playsInline muted={muted} />
       </div>
 
-      {status === 'live' && (
-        <>
-          <button
-            className={`talkBtn ${talking ? 'talking' : ''}`}
-            onPointerDown={() => void talkStart()}
-            onPointerUp={talkStop}
-            onPointerLeave={talkStop}
-            onPointerCancel={talkStop}
-            onContextMenu={(e) => e.preventDefault()}
-          >
-            {talking ? 'Talking… release to stop' : '🎙 Hold to talk to baby'}
-          </button>
-          {talkError && (
-            <span style={{ color: 'var(--bad)', fontSize: '0.85rem' }}>
-              Microphone unavailable: {talkError}
-            </span>
-          )}
-          <MonitorPanel stream={remoteStream} videoRef={videoRef} overlayHostRef={wrapRef} />
-
-          <details className="card shareCard">
-            <summary>Invite another viewer</summary>
-            <p className="muted">
-              Let someone else watch too — scan this on their phone, or send them the link. (Two
-              viewers can watch at once; if the room is full, one of you closes the page first.)
-            </p>
-            <div className="qr">
-              <QRCodeSVG value={`${window.location.origin}/watch#${code}`} size={168} />
-            </div>
-            <div className="code">{code}</div>
-            <button
-              onClick={() =>
-                void navigator.clipboard.writeText(`${window.location.origin}/watch#${code}`)
-              }
-            >
-              Copy link
-            </button>
-          </details>
-        </>
-      )}
-
-      {status === 'revoked' && (
-        <div className="card">
-          <p className="muted">
-            The camera generated a new code, so this device no longer has access. Ask for the new
-            link to reconnect.
-          </p>
-          <button className="primary" onClick={() => navigate('/')}>
-            Back home
-          </button>
+      {alertToast && (
+        <div className="alertToast">
+          <span className="dot" />
+          {alertToast === 'noise' ? 'Noise!' : 'Motion!'}
         </div>
       )}
+
+      <div className={`chrome ${chromeShown ? '' : 'chromeHidden'}`} onPointerDown={poke}>
+        <div className="chromeTop">
+          <h1>
+            <Link to="/">babymon</Link> · watch
+          </h1>
+          <div className="row">
+            <button
+              className={`badge ${status === 'live' ? 'live' : status === 'revoked' ? 'bad' : 'warn'}`}
+              onClick={() => togglePanel('connections')}
+            >
+              <span className="dot" />
+              {STATUS_TEXT[status]}
+              {status === 'live' && roster && `: ${roster.viewers.length} watching`}
+            </button>
+            {status === 'live' && (
+              <button
+                onClick={() => {
+                  const next = !muted;
+                  setMuted(next);
+                  if (!next) {
+                    primeAlertSound();
+                    void videoRef.current?.play().catch(() => {});
+                  }
+                }}
+              >
+                {muted ? '🔊 Unmute' : '🔇 Mute'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="chromeBottom">
+          <div className="chromePanels">
+            {panel === 'connections' && (
+              <ConnectionsPanel
+                roster={roster}
+                perspective="viewer"
+                selfPeerId={selfId}
+                routes={new Map(route ? [['camera', route]] : [])}
+              />
+            )}
+
+            {status === 'live' && (
+              // Kept mounted (hidden via CSS) so detection keeps running
+              // while the panel is closed.
+              <div style={panel === 'monitor' || editingRoi ? undefined : { display: 'none' }}>
+                <MonitorPanel
+                  stream={remoteStream}
+                  videoRef={videoRef}
+                  overlayHostRef={wrapRef}
+                  onAlert={handleAlert}
+                  onEditingRoi={setEditingRoi}
+                />
+              </div>
+            )}
+
+            {panel === 'invite' && status === 'live' && (
+              <div className="card">
+                <strong>Invite another viewer</strong>
+                <p className="muted">
+                  Let someone else watch too — scan this on their phone, or send them the link.
+                  (Two viewers can watch at once; if the room is full, one of you closes the page
+                  first.)
+                </p>
+                <div className="qr">
+                  <QRCodeSVG value={`${window.location.origin}/watch#${code}`} size={168} />
+                </div>
+                <div className="code">{code}</div>
+                <button
+                  onClick={() =>
+                    void navigator.clipboard.writeText(`${window.location.origin}/watch#${code}`)
+                  }
+                >
+                  Copy link
+                </button>
+              </div>
+            )}
+
+            {status === 'revoked' && (
+              <div className="card">
+                <p className="muted">
+                  The camera generated a new code, so this device no longer has access. Ask for the
+                  new link to reconnect.
+                </p>
+                <button className="primary" onClick={() => navigate('/')}>
+                  Back home
+                </button>
+              </div>
+            )}
+          </div>
+
+          {status === 'live' && !editingRoi && (
+            <>
+              {talkError && (
+                <span style={{ color: 'var(--bad)', fontSize: '0.85rem' }}>
+                  Microphone unavailable: {talkError}
+                </span>
+              )}
+              <button
+                className={`talkBtn ${talking ? 'talking' : ''}`}
+                onPointerDown={() => void talkStart()}
+                onPointerUp={talkStop}
+                onPointerLeave={talkStop}
+                onPointerCancel={talkStop}
+                onContextMenu={(e) => e.preventDefault()}
+              >
+                {talking ? 'Talking… release to stop' : '🎙 Hold to talk to baby'}
+              </button>
+              <div className="chromeTabs">
+                <button
+                  className={panel === 'monitor' ? 'active' : ''}
+                  onClick={() => togglePanel('monitor')}
+                >
+                  Monitoring
+                </button>
+                <button
+                  className={panel === 'connections' ? 'active' : ''}
+                  onClick={() => togglePanel('connections')}
+                >
+                  Connections
+                </button>
+                <button
+                  className={panel === 'invite' ? 'active' : ''}
+                  onClick={() => togglePanel('invite')}
+                >
+                  Invite
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -6,7 +6,7 @@ import {
 } from '@babymon/detection';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { playAlertSound, vibrate } from '../lib/alerts';
+import { alertSoundReady, playAlertSound, primeAlertSound, vibrate } from '../lib/alerts';
 
 const GRID_W = 64;
 const GRID_H = 48;
@@ -53,23 +53,34 @@ interface Props {
   stream: MediaStream | null;
   videoRef: RefObject<HTMLVideoElement | null>;
   overlayHostRef: RefObject<HTMLDivElement | null>;
+  onAlert?: (kind: 'noise' | 'motion') => void;
+  onEditingRoi?: (editing: boolean) => void;
 }
 
-export default function MonitorPanel({ stream, videoRef, overlayHostRef }: Props) {
+export default function MonitorPanel({ stream, videoRef, overlayHostRef, onAlert, onEditingRoi }: Props) {
   const [noiseOn, setNoiseOn] = useState(true);
   const [motionOn, setMotionOn] = useState(true);
   const [sensitivity, setSensitivity] = useState<Sensitivity>('medium');
   const [level, setLevel] = useState(0);
   const [threshold, setThreshold] = useState(1);
   const [roi, setRoi] = useState<Roi | null>(loadRoi);
-  const [editingRoi, setEditingRoi] = useState(false);
+  const [editingRoi, setEditingRoiRaw] = useState(false);
   const [flash, setFlash] = useState<'noise' | 'motion' | null>(null);
+  const [soundBlocked, setSoundBlocked] = useState(false);
 
   const lastAlertRef = useRef<Record<string, number>>({});
   const noiseOnRef = useRef(noiseOn);
   const motionOnRef = useRef(motionOn);
   noiseOnRef.current = noiseOn;
   motionOnRef.current = motionOn;
+
+  function setEditingRoi(next: boolean | ((v: boolean) => boolean)) {
+    setEditingRoiRaw((prev) => {
+      const value = typeof next === 'function' ? next(prev) : next;
+      onEditingRoi?.(value);
+      return value;
+    });
+  }
 
   function fireAlert(kind: 'noise' | 'motion') {
     const now = Date.now();
@@ -78,9 +89,18 @@ export default function MonitorPanel({ stream, videoRef, overlayHostRef }: Props
     lastAlertRef.current[kind] = now;
     playAlertSound();
     vibrate();
+    onAlert?.(kind);
     setFlash(kind);
     setTimeout(() => setFlash(null), 2000);
   }
+
+  // Surface it when the browser has silenced our audio (iOS does this after
+  // screen lock / calls / app switches) instead of failing silently.
+  useEffect(() => {
+    if (!noiseOn && !motionOn) return;
+    const timer = setInterval(() => setSoundBlocked(!alertSoundReady()), 2000);
+    return () => clearInterval(timer);
+  }, [noiseOn, motionOn]);
 
   // ---- noise: RMS of the remote audio at ~10 Hz through AdaptiveThreshold
   useEffect(() => {
@@ -96,8 +116,11 @@ export default function MonitorPanel({ stream, videoRef, overlayHostRef }: Props
     });
     const buf = new Uint8Array(analyser.fftSize);
 
-    const resume = () => void audioCtx.resume();
+    const resume = () => {
+      if (audioCtx.state !== 'running') void audioCtx.resume().catch(() => {});
+    };
     document.addEventListener('pointerdown', resume);
+    document.addEventListener('visibilitychange', resume);
 
     const timer = setInterval(() => {
       analyser.getByteTimeDomainData(buf);
@@ -115,6 +138,7 @@ export default function MonitorPanel({ stream, videoRef, overlayHostRef }: Props
     return () => {
       clearInterval(timer);
       document.removeEventListener('pointerdown', resume);
+      document.removeEventListener('visibilitychange', resume);
       source.disconnect();
       void audioCtx.close();
     };
@@ -172,8 +196,21 @@ export default function MonitorPanel({ stream, videoRef, overlayHostRef }: Props
         )}
       </div>
 
+      {(noiseOn || motionOn) && soundBlocked && (
+        <div className="soundBlocked">
+          🔇 Alert sound is blocked by the browser — tap anywhere once to re-enable it.
+        </div>
+      )}
+
       <label className="toggle">
-        <input type="checkbox" checked={noiseOn} onChange={(e) => setNoiseOn(e.target.checked)} />
+        <input
+          type="checkbox"
+          checked={noiseOn}
+          onChange={(e) => {
+            primeAlertSound();
+            setNoiseOn(e.target.checked);
+          }}
+        />
         Noise alerts (adapts to steady background noise)
       </label>
       {noiseOn && (
@@ -187,7 +224,14 @@ export default function MonitorPanel({ stream, videoRef, overlayHostRef }: Props
       )}
 
       <label className="toggle">
-        <input type="checkbox" checked={motionOn} onChange={(e) => setMotionOn(e.target.checked)} />
+        <input
+          type="checkbox"
+          checked={motionOn}
+          onChange={(e) => {
+            primeAlertSound();
+            setMotionOn(e.target.checked);
+          }}
+        />
         Motion alerts
       </label>
       {motionOn && (
