@@ -156,6 +156,7 @@ export default function MonitorPanel({ stream, videoRef, overlayHostRef, onAlert
     const detector = new MotionDetector({
       ...DEFAULT_MOTION_OPTIONS,
       areaThreshold: MOTION_AREA[sensitivity],
+      width: GRID_W,
     });
     detector.mask = buildMask(roi);
     const gray = new Uint8Array(GRID_W * GRID_H);

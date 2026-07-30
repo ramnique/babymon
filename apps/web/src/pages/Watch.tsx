@@ -5,7 +5,14 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { primeAlertSound } from '../lib/alerts';
 import { getRouteInfo, rtcConfig, type RouteInfo } from '../lib/rtcstats';
 import { SignalingClient } from '../lib/signaling';
-import { clearWatchCode, loadOrCreateViewerId, saveWatchCode } from '../lib/store';
+import {
+  clearWatchCode,
+  loadNightBoost,
+  loadOrCreateViewerId,
+  saveNightBoost,
+  saveWatchCode,
+  type NightBoost,
+} from '../lib/store';
 import ConnectionsPanel from '../ui/ConnectionsPanel';
 import MonitorPanel from '../ui/MonitorPanel';
 
@@ -34,6 +41,22 @@ const STATUS_TEXT: Record<Status, string> = {
 
 const CONTROLS_HIDE_MS = 3500;
 
+/**
+ * Display-only low-light enhancement. Applied as a CSS filter on the video
+ * element, so the detection pipeline (which reads raw frames off the video
+ * via canvas) is never affected by it.
+ */
+const BOOST_FILTERS: Record<NightBoost, string | undefined> = {
+  0: undefined,
+  1: 'brightness(1.8) contrast(1.1)',
+  2: 'brightness(2.8) contrast(1.3) saturate(0.5)',
+};
+const BOOST_LABELS: Record<NightBoost, string> = {
+  0: '🌙 Enhance',
+  1: '🌙 Low',
+  2: '🌙 High',
+};
+
 type Panel = 'monitor' | 'connections' | 'invite';
 
 interface SignalPayload {
@@ -58,6 +81,7 @@ export default function WatchPage() {
   const [route, setRoute] = useState<RouteInfo | null>(null);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [editingRoi, setEditingRoi] = useState(false);
+  const [boost, setBoost] = useState<NightBoost>(loadNightBoost);
   const [alertToast, setAlertToast] = useState<'noise' | 'motion' | null>(null);
 
   const sigRef = useRef<SignalingClient | null>(null);
@@ -376,7 +400,13 @@ export default function WatchPage() {
       }}
     >
       <div className="stageVideo" ref={wrapRef} onClick={onStageTap}>
-        <video ref={videoRef} autoPlay playsInline muted={muted} />
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted={muted}
+          style={BOOST_FILTERS[boost] ? { filter: BOOST_FILTERS[boost] } : undefined}
+        />
       </div>
 
       {alertToast && (
@@ -401,18 +431,31 @@ export default function WatchPage() {
               {status === 'live' && roster && `: ${roster.viewers.length} watching`}
             </button>
             {status === 'live' && (
-              <button
-                onClick={() => {
-                  const next = !muted;
-                  setMuted(next);
-                  if (!next) {
-                    primeAlertSound();
-                    void videoRef.current?.play().catch(() => {});
-                  }
-                }}
-              >
-                {muted ? '🔊 Unmute' : '🔇 Mute'}
-              </button>
+              <>
+                <button
+                  onClick={() => {
+                    const next = ((boost + 1) % 3) as NightBoost;
+                    setBoost(next);
+                    saveNightBoost(next);
+                  }}
+                  style={boost ? { background: 'var(--accent)', color: '#04141d' } : undefined}
+                  title="Brighten the picture in a dark room (display only — alerts see the raw video)"
+                >
+                  {BOOST_LABELS[boost]}
+                </button>
+                <button
+                  onClick={() => {
+                    const next = !muted;
+                    setMuted(next);
+                    if (!next) {
+                      primeAlertSound();
+                      void videoRef.current?.play().catch(() => {});
+                    }
+                  }}
+                >
+                  {muted ? '🔊 Unmute' : '🔇 Mute'}
+                </button>
+              </>
             )}
           </div>
         </div>

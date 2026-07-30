@@ -47,6 +47,19 @@ export function clearWatchCode(): void {
   localStorage.removeItem(WATCH_CODE_KEY);
 }
 
+const NIGHT_BOOST_KEY = 'babymon.nightBoost';
+
+export type NightBoost = 0 | 1 | 2;
+
+export function loadNightBoost(): NightBoost {
+  const raw = Number(localStorage.getItem(NIGHT_BOOST_KEY));
+  return raw === 1 || raw === 2 ? raw : 0;
+}
+
+export function saveNightBoost(level: NightBoost): void {
+  localStorage.setItem(NIGHT_BOOST_KEY, String(level));
+}
+
 const VIEWER_ID_KEY = 'babymon.viewerId';
 
 /** Stable per-browser id so a rejoin evicts this browser's ghost connection. */
