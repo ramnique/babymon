@@ -1,6 +1,6 @@
 import { isValidRoomCode, normalizeRoomCode, type IceServer, type ServerToClient } from '@babymon/shared';
 import { QRCodeSVG } from 'qrcode.react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { primeAlertSound } from '../lib/alerts';
 import { getRouteInfo, rtcConfig, type RouteInfo } from '../lib/rtcstats';
@@ -9,9 +9,12 @@ import {
   clearWatchCode,
   loadNightBoost,
   loadOrCreateViewerId,
+  loadRotation,
   saveNightBoost,
+  saveRotation,
   saveWatchCode,
   type NightBoost,
+  type Rotation,
 } from '../lib/store';
 import ConnectionsPanel from '../ui/ConnectionsPanel';
 import MonitorPanel from '../ui/MonitorPanel';
@@ -57,6 +60,29 @@ const BOOST_LABELS: Record<NightBoost, string> = {
   2: '🌙 High',
 };
 
+/**
+ * Rotation is display-only, like the night boost — detection reads raw
+ * frames, so the ROI mask stays in unrotated frame coordinates. At 90°/270°
+ * the element's box swaps dimensions (the stage is the full viewport, so
+ * dvh/dvw describe it exactly); otherwise a rotated portrait feed would
+ * shrink into its own letterbox.
+ */
+function videoStyle(boost: NightBoost, rotation: Rotation): CSSProperties | undefined {
+  const style: CSSProperties = {};
+  const filter = BOOST_FILTERS[boost];
+  if (filter) style.filter = filter;
+  if (rotation === 2) style.transform = 'rotate(180deg)';
+  if (rotation % 2 === 1) {
+    style.position = 'absolute';
+    style.top = '50%';
+    style.left = '50%';
+    style.width = '100dvh';
+    style.height = '100dvw';
+    style.transform = `translate(-50%, -50%) rotate(${rotation * 90}deg)`;
+  }
+  return Object.keys(style).length > 0 ? style : undefined;
+}
+
 type Panel = 'monitor' | 'connections' | 'invite';
 
 interface SignalPayload {
@@ -82,6 +108,7 @@ export default function WatchPage() {
   const [controlsVisible, setControlsVisible] = useState(true);
   const [editingRoi, setEditingRoi] = useState(false);
   const [boost, setBoost] = useState<NightBoost>(loadNightBoost);
+  const [rotation, setRotation] = useState<Rotation>(loadRotation);
   const [alertToast, setAlertToast] = useState<'noise' | 'motion' | null>(null);
 
   const sigRef = useRef<SignalingClient | null>(null);
@@ -405,7 +432,7 @@ export default function WatchPage() {
           autoPlay
           playsInline
           muted={muted}
-          style={BOOST_FILTERS[boost] ? { filter: BOOST_FILTERS[boost] } : undefined}
+          style={videoStyle(boost, rotation)}
         />
       </div>
 
@@ -432,6 +459,17 @@ export default function WatchPage() {
             </button>
             {status === 'live' && (
               <>
+                <button
+                  onClick={() => {
+                    const next = ((rotation + 1) % 4) as Rotation;
+                    setRotation(next);
+                    saveRotation(next);
+                  }}
+                  style={rotation ? { background: 'var(--accent)', color: '#04141d' } : undefined}
+                  title="Rotate the picture a quarter turn (display only)"
+                >
+                  {rotation ? `↻ ${rotation * 90}°` : '↻ Rotate'}
+                </button>
                 <button
                   onClick={() => {
                     const next = ((boost + 1) % 3) as NightBoost;
@@ -481,6 +519,7 @@ export default function WatchPage() {
                   overlayHostRef={wrapRef}
                   onAlert={handleAlert}
                   onEditingRoi={setEditingRoi}
+                  rotated={rotation !== 0}
                 />
               </div>
             )}

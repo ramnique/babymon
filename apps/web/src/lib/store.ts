@@ -60,6 +60,20 @@ export function saveNightBoost(level: NightBoost): void {
   localStorage.setItem(NIGHT_BOOST_KEY, String(level));
 }
 
+const ROTATE_KEY = 'babymon.rotate';
+
+/** Quarter-turns clockwise applied to the viewer's video. */
+export type Rotation = 0 | 1 | 2 | 3;
+
+export function loadRotation(): Rotation {
+  const raw = Number(localStorage.getItem(ROTATE_KEY));
+  return raw === 1 || raw === 2 || raw === 3 ? raw : 0;
+}
+
+export function saveRotation(rotation: Rotation): void {
+  localStorage.setItem(ROTATE_KEY, String(rotation));
+}
+
 const VIEWER_ID_KEY = 'babymon.viewerId';
 
 /** Stable per-browser id so a rejoin evicts this browser's ghost connection. */

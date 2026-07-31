@@ -55,9 +55,18 @@ interface Props {
   overlayHostRef: RefObject<HTMLDivElement | null>;
   onAlert?: (kind: 'noise' | 'motion') => void;
   onEditingRoi?: (editing: boolean) => void;
+  /** Viewer applied a display rotation: the ROI overlay's geometry assumes an unrotated video. */
+  rotated?: boolean;
 }
 
-export default function MonitorPanel({ stream, videoRef, overlayHostRef, onAlert, onEditingRoi }: Props) {
+export default function MonitorPanel({
+  stream,
+  videoRef,
+  overlayHostRef,
+  onAlert,
+  onEditingRoi,
+  rotated,
+}: Props) {
   const [noiseOn, setNoiseOn] = useState(true);
   const [motionOn, setMotionOn] = useState(true);
   const [sensitivity, setSensitivity] = useState<Sensitivity>('medium');
@@ -237,10 +246,11 @@ export default function MonitorPanel({ stream, videoRef, overlayHostRef, onAlert
       </label>
       {motionOn && (
         <div className="row">
-          <button onClick={() => setEditingRoi((v) => !v)}>
+          <button disabled={rotated} onClick={() => setEditingRoi((v) => !v)}>
             {editingRoi ? 'Done' : roi ? 'Redraw watch area' : 'Draw watch area'}
           </button>
           {roi && <button onClick={() => saveRoi(null)}>Watch whole frame</button>}
+          {rotated && <span className="muted">Set rotation back to 0° to draw</span>}
         </div>
       )}
 
@@ -259,6 +269,7 @@ export default function MonitorPanel({ stream, videoRef, overlayHostRef, onAlert
 
       {(editingRoi || roi) &&
         motionOn &&
+        !rotated &&
         overlayHostRef.current &&
         createPortal(
           <RoiOverlay
